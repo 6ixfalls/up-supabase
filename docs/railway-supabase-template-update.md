@@ -14,23 +14,13 @@ Keep the Railway-specific source assets and rebase them instead of recreating th
 
 ## Credential generator
 
-Use `docs/supabase-credential-generator.html` to generate the source credentials. Paste the generated values into **Supabase Studio** variables, then reference them from every other service with Railway references.
+Use `docs/supabase-credential-generator.html` only for values that Railway cannot derive from `random(len, "charset")`: JWT-derived API keys, JWKS values, and opaque Supabase API keys. Paste these generated values into **Supabase Studio** variables, then reference them from every other service with Railway references.
 
-Source credentials generated under **Supabase Studio**:
+Generated under **Supabase Studio** by the HTML tool:
 
 - `JWT_SECRET`
 - `ANON_KEY`
 - `SERVICE_ROLE_KEY`
-- `SECRET_KEY_BASE`
-- `REALTIME_DB_ENC_KEY`
-- `VAULT_ENC_KEY`
-- `PG_META_CRYPTO_KEY`
-- `S3_PROTOCOL_ACCESS_KEY_ID`
-- `S3_PROTOCOL_ACCESS_KEY_SECRET`
-- `MINIO_ROOT_USER`
-- `MINIO_ROOT_PASSWORD`
-- `POSTGRES_PASSWORD`
-- `DASHBOARD_PASSWORD`
 - `SUPABASE_PUBLISHABLE_KEY`
 - `SUPABASE_SECRET_KEY`
 - `ANON_KEY_ASYMMETRIC`
@@ -38,7 +28,14 @@ Source credentials generated under **Supabase Studio**:
 - `JWT_KEYS`
 - `JWT_JWKS`
 
-Do not create duplicate generated secrets on Postgres, Kong, Auth, Realtime, Storage, or Supavisor. Reference the Studio source variables instead.
+Do not use the HTML generator for independent random passwords or encryption keys. Use Railway defaults directly where those variables are consumed, using the Railway format `random(len, "charset")`.
+
+Recommended Railway random expressions:
+
+- Passwords: `${{ random(64, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") }}`
+- 16-character hex keys: `${{ random(16, "0123456789abcdef") }}`
+- 32-character hex keys: `${{ random(32, "0123456789abcdef") }}`
+- 64-character base64url-like keys: `${{ random(64, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") }}`
 
 ## 1. Rebase images and Railway source folders
 
@@ -68,15 +65,6 @@ Keep existing Studio UI variables, but add only the missing Docker-aligned value
 - [ ] Add `ANON_KEY` from the credential generator.
 - [ ] Add `SERVICE_ROLE_KEY` from the credential generator.
 - [ ] Add `JWT_SECRET` from the credential generator.
-- [ ] Add `POSTGRES_PASSWORD` from the credential generator.
-- [ ] Add `SECRET_KEY_BASE` from the credential generator.
-- [ ] Add `REALTIME_DB_ENC_KEY` from the credential generator.
-- [ ] Add `VAULT_ENC_KEY` from the credential generator.
-- [ ] Add `S3_PROTOCOL_ACCESS_KEY_ID` from the credential generator.
-- [ ] Add `S3_PROTOCOL_ACCESS_KEY_SECRET` from the credential generator.
-- [ ] Add `MINIO_ROOT_USER` from the credential generator.
-- [ ] Add `MINIO_ROOT_PASSWORD` from the credential generator.
-- [ ] Add `DASHBOARD_PASSWORD` from the credential generator.
 - [ ] Add `SUPABASE_PUBLISHABLE_KEY` from the credential generator.
 - [ ] Add `SUPABASE_SECRET_KEY` from the credential generator.
 - [ ] Add `JWT_KEYS` from the credential generator.
@@ -92,9 +80,9 @@ Keep existing Studio UI variables, but add only the missing Docker-aligned value
 
 ## 4. Postgres variables
 
-Use the generated Studio password rather than a separate Postgres secret.
+Use Railway random generation directly on Postgres; do not create a duplicate Studio variable for the database password.
 
-- [ ] Change `POSTGRES_PASSWORD` to `${{"Supabase Studio".POSTGRES_PASSWORD}}`.
+- [ ] Change `POSTGRES_PASSWORD` to `${{ random(64, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") }}`.
 - [ ] Keep `PGPASSWORD=${{POSTGRES_PASSWORD}}`.
 - [ ] Keep `PGUSER=${{POSTGRES_USER}}`.
 - [ ] Keep `PGDATABASE=${{POSTGRES_DB}}`.
@@ -112,8 +100,8 @@ Keep Railway's `envsubst` Kong flow. Do not switch `KONG_DECLARATIVE_CONFIG` unl
 - [ ] Add `SUPABASE_SECRET_KEY=${{"Supabase Studio".SUPABASE_SECRET_KEY}}`.
 - [ ] Add `ANON_KEY_ASYMMETRIC=${{"Supabase Studio".ANON_KEY_ASYMMETRIC}}`.
 - [ ] Add `SERVICE_ROLE_KEY_ASYMMETRIC=${{"Supabase Studio".SERVICE_ROLE_KEY_ASYMMETRIC}}`.
-- [ ] Change `DASHBOARD_PASSWORD` to `${{"Supabase Studio".DASHBOARD_PASSWORD}}`.
-- [ ] Keep `DASHBOARD_USERNAME` generated or user-defined; do not add a second dashboard username variable elsewhere.
+- [ ] Change `DASHBOARD_PASSWORD` to `${{ random(64, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") }}`.
+- [ ] Keep `DASHBOARD_USERNAME` user-defined or use `${{ random(16, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") }}`.
 - [ ] Add `request-termination`, `ip-restriction`, and `post-function` to `KONG_PLUGINS`.
 - [ ] Change `KONG_DNS_ORDER` to `LAST,A,CNAME` unless Railway IPv6 resolution requires the current value.
 - [ ] Add `KONG_DNS_NOT_FOUND_TTL=1` only if supported by the Railway Kong image.
@@ -144,7 +132,7 @@ Only add variables that are missing from the template and likely to be user-conf
 
 ## 8. Realtime variables
 
-- [ ] Change `DB_ENC_KEY` to `${{"Supabase Studio".REALTIME_DB_ENC_KEY}}`.
+- [ ] Change `DB_ENC_KEY` to `${{ random(16, "0123456789abcdef") }}`.
 - [ ] Change `API_JWT_SECRET` to `${{"Supabase Studio".JWT_SECRET}}`.
 - [ ] Add `API_JWT_JWKS=${{"Supabase Studio".JWT_JWKS}}` only when asymmetric auth is enabled.
 - [ ] Add `METRICS_JWT_SECRET=${{"Supabase Studio".JWT_SECRET}}`.
@@ -167,29 +155,29 @@ Keep S3/MinIO because the Railway template already uses it. Do not add file-back
 - [ ] Rename `STORAGE_S3_BUCKET` to `GLOBAL_S3_BUCKET` if required by `storage-api:v1.60.4`.
 - [ ] Rename `STORAGE_S3_REGION` to `REGION` if required by `storage-api:v1.60.4`.
 - [ ] Rename `IMAGE_TRANSFORMATION_ENABLED` to `ENABLE_IMAGE_TRANSFORMATION` if required by `storage-api:v1.60.4`.
-- [ ] Add `S3_PROTOCOL_ACCESS_KEY_ID=${{"Supabase Studio".S3_PROTOCOL_ACCESS_KEY_ID}}`.
-- [ ] Add `S3_PROTOCOL_ACCESS_KEY_SECRET=${{"Supabase Studio".S3_PROTOCOL_ACCESS_KEY_SECRET}}`.
+- [ ] Add `S3_PROTOCOL_ACCESS_KEY_ID=${{ random(32, "0123456789abcdef") }}`.
+- [ ] Add `S3_PROTOCOL_ACCESS_KEY_SECRET=${{ random(64, "0123456789abcdef") }}`.
 
 ## 10. S3 / MinIO variables
 
-- [ ] Change `MINIO_ROOT_USER` to `${{"Supabase Studio".MINIO_ROOT_USER}}`.
-- [ ] Change `MINIO_ROOT_PASSWORD` to `${{"Supabase Studio".MINIO_ROOT_PASSWORD}}`.
+- [ ] Change `MINIO_ROOT_USER` to `${{ random(32, "0123456789abcdef") }}`.
+- [ ] Change `MINIO_ROOT_PASSWORD` to `${{ random(64, "0123456789abcdef") }}`.
 - [ ] Keep existing Railway private endpoint variables; they are service-derived and should not be duplicated in Studio.
 
 ## 11. imgproxy and postgres-meta variables
 
 - [ ] For imgproxy, add only `IMGPROXY_LOCAL_FILESYSTEM_ROOT=/` and `IMGPROXY_MAX_SRC_RESOLUTION=16.8` if required by the newer image.
 - [ ] For imgproxy, rename `IMGPROXY_ENABLE_WEBP_DETECTION` to `IMGPROXY_AUTO_WEBP` if required by `darthsim/imgproxy:v3.30.1`.
-- [ ] For postgres-meta, change `CRYPTO_KEY` to `${{"Supabase Studio".PG_META_CRYPTO_KEY}}`.
+- [ ] For postgres-meta, change `CRYPTO_KEY` to `${{ random(64, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") }}`.
 - [ ] For postgres-meta, keep existing Postgres host, port, database, user, and password references unless the official role change is required.
 
 ## 12. Supavisor variables
 
-Add Supavisor as a new service; source secrets from Studio.
+Add Supavisor as a new service. Source JWT values from Studio, but use Railway random generation for independent Supavisor secrets.
 
 - [ ] Add `DATABASE_URL=ecto://supabase_admin:${{Postgres.PGPASSWORD}}@${{Postgres.PGHOST}}:${{Postgres.PGPORT}}/_supabase`.
-- [ ] Add `SECRET_KEY_BASE=${{"Supabase Studio".SECRET_KEY_BASE}}`.
-- [ ] Add `VAULT_ENC_KEY=${{"Supabase Studio".VAULT_ENC_KEY}}`.
+- [ ] Add `SECRET_KEY_BASE=${{ random(64, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") }}`.
+- [ ] Add `VAULT_ENC_KEY=${{ random(32, "0123456789abcdef") }}`.
 - [ ] Add `API_JWT_SECRET=${{"Supabase Studio".JWT_SECRET}}`.
 - [ ] Add `METRICS_JWT_SECRET=${{"Supabase Studio".JWT_SECRET}}`.
 - [ ] Add `POOLER_TENANT_ID` as a generated or user-provided non-secret value.
