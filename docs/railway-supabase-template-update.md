@@ -1,269 +1,217 @@
 # Railway Supabase template update checklist
 
-This checklist includes only changes needed beyond the supplied Railway template. Items already present in the template are intentionally omitted unless they need to be renamed, removed, or changed. It also accounts for the Railway-specific `github.com/6ixfalls/supabase` source repository, which already contains custom Kong, Postgres, and Supavisor assets.
+This checklist only includes template changes that are still needed after accounting for the existing Railway template and the Railway-specific `github.com/6ixfalls/supabase` source repository.
 
 ## Railway source repository findings
 
-The `6ixfalls/supabase` repository already has Railway-specific source folders for `kong`, `postgres`, and `pooler`, so the template should update those assets rather than recreate them from scratch:
+Keep the Railway-specific source assets and rebase them instead of recreating them:
 
-- `kong/Dockerfile` currently builds from `kong:2.8.1`, copies `kong.yml`, installs `gettext`, and renders the Kong template with `envsubst` at startup.
-- `kong/kong.yml` already contains the existing Auth, REST, GraphQL, Realtime, Analytics, postgres-meta, and Studio routes, but its Storage and Edge Functions routes are commented out.
-- `postgres/Dockerfile` already bakes the Supabase init SQL files into `/docker-entrypoint-initdb.d` and installs a Railway-specific `wrapper.sh`.
-- `postgres/wrapper.sh` already handles Railway-specific `PGHOST`/`PGPORT` behavior and persists `/etc/postgresql-custom` through the Postgres data volume.
+- `kong/Dockerfile` already copies `kong.yml`, installs `gettext`, and renders Railway variables with `envsubst`.
+- `kong/kong.yml` already has Auth, REST, GraphQL, Realtime, Analytics, postgres-meta, and Studio routes; Storage and Edge Functions routes need to be enabled/updated.
+- `postgres/Dockerfile` already bakes Supabase init SQL into `/docker-entrypoint-initdb.d` and installs `wrapper.sh`.
+- `postgres/wrapper.sh` already handles Railway `PGHOST`/`PGPORT` behavior and persists `/etc/postgresql-custom` through the Postgres data volume.
 - `pooler/Dockerfile` already bakes `pooler.exs` into a Supavisor image and starts Supavisor with migrate, eval, and server commands.
 
-## Credential generation answer
+## Credential generator
 
-The legacy symmetric API keys are **deterministic once their inputs are chosen**:
+Use `docs/supabase-credential-generator.html` to generate the source credentials. Paste the generated values into **Supabase Studio** variables, then reference them from every other service with Railway references.
 
-- Choose one `JWT_SECRET` with at least 32 characters.
-- Sign an `anon` JWT with that secret and stable claims such as `role=anon`, `iss=supabase`, `iat`, and `exp`.
-- Sign a `service_role` JWT with the same secret and stable claims such as `role=service_role`, `iss=supabase`, `iat`, and `exp`.
-- Reusing the same secret, algorithm, header, and claims produces the same JWT string.
-- Changing any input, including `iat` or `exp`, produces a different JWT string.
-
-Railway can generate random strings, but it cannot automatically derive the signed Supabase JWT API keys from a shared `JWT_SECRET` or enforce every required key length/format. A small secret generator website is therefore useful for one-click template users. Build it as a static, client-only utility that uses browser cryptography, avoids telemetry, never sends generated values to a server, and clearly warns users to save credentials before closing the page.
-
-The generator should produce Railway-ready variable values for each deployment:
+Source credentials generated under **Supabase Studio**:
 
 - `JWT_SECRET`
 - `ANON_KEY`
 - `SERVICE_ROLE_KEY`
-- `DASHBOARD_USERNAME`
-- `DASHBOARD_PASSWORD`
-- `MINIO_ROOT_USER`
-- `MINIO_ROOT_PASSWORD`
 - `SECRET_KEY_BASE`
 - `REALTIME_DB_ENC_KEY`
 - `VAULT_ENC_KEY`
 - `PG_META_CRYPTO_KEY`
 - `S3_PROTOCOL_ACCESS_KEY_ID`
 - `S3_PROTOCOL_ACCESS_KEY_SECRET`
-- Optional modern auth keys: `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, `JWT_KEYS`, `JWT_JWKS`, `ANON_KEY_ASYMMETRIC`, and `SERVICE_ROLE_KEY_ASYMMETRIC`
+- `MINIO_ROOT_USER`
+- `MINIO_ROOT_PASSWORD`
+- `POSTGRES_PASSWORD`
+- `DASHBOARD_PASSWORD`
+- `SUPABASE_PUBLISHABLE_KEY`
+- `SUPABASE_SECRET_KEY`
+- `ANON_KEY_ASYMMETRIC`
+- `SERVICE_ROLE_KEY_ASYMMETRIC`
+- `JWT_KEYS`
+- `JWT_JWKS`
 
-## Secret generator website requirements
+Do not create duplicate generated secrets on Postgres, Kong, Auth, Realtime, Storage, or Supavisor. Reference the Studio source variables instead.
 
-- [x] Build a small static website or single-page tool for generating the template credentials at `docs/supabase-credential-generator.html`.
-- [x] Run all generation locally in the browser; do not send generated secrets to any backend.
-- [x] Use `crypto.getRandomValues` or WebCrypto APIs for random bytes.
-- [x] Generate `JWT_SECRET` first, then sign `ANON_KEY` and `SERVICE_ROLE_KEY` from that same secret.
-- [x] Use stable JWT claims so users can regenerate the same keys when they provide the same `JWT_SECRET`, `iat`, and `exp` inputs.
-- [x] Provide defaults for `iat` and a long-lived `exp`, but make both visible so users understand they affect deterministic output.
-- [ ] Validate `JWT_SECRET` is at least 32 characters.
-- [ ] Validate `REALTIME_DB_ENC_KEY` is exactly 16 characters.
-- [ ] Validate `VAULT_ENC_KEY` is exactly 32 characters.
-- [ ] Validate `PG_META_CRYPTO_KEY` is at least 32 characters.
-- [ ] Validate `SECRET_KEY_BASE` is at least 64 characters.
-- [x] Generate MinIO and S3 protocol credentials instead of relying on hard-coded template defaults.
-- [x] Offer a copyable Railway variable block with one `KEY=value` line per credential.
-- [ ] Offer individual copy buttons for each credential, if the basic copy-all workflow is not enough.
-- [x] Add a warning that `SERVICE_ROLE_KEY`, `SUPABASE_SECRET_KEY`, database passwords, and S3 secrets must never be exposed in browser application code.
-- [x] Avoid analytics, external scripts, remote fonts, and third-party assets on the generator page.
-- [x] Make the page usable offline after load by keeping CSS and JavaScript on the same page.
+## 1. Rebase images and Railway source folders
 
-## 1. Update image sources and versions
+- [ ] Update `6ixfalls/supabase/kong/Dockerfile` from `kong:2.8.1` to `kong/kong:3.9.1`.
+- [ ] Update Studio from `supabase/studio:2025.10.09-sha-433e578` to `supabase/studio:2026.06.03-sha-0bca601`.
+- [ ] Update Auth from `supabase/gotrue:v2.180.0` to `supabase/gotrue:v2.189.0`.
+- [ ] Update PostgREST from `postgrest/postgrest:v13.0.7` to `postgrest/postgrest:v14.12`.
+- [ ] Update Realtime from `supabase/realtime:v2.51.11` to `supabase/realtime:v2.102.3`.
+- [ ] Update Storage from `supabase/storage-api:v1.28.0` to `supabase/storage-api:v1.60.4`.
+- [ ] Update imgproxy from `darthsim/imgproxy:v3.8.0` to `darthsim/imgproxy:v3.30.1`.
+- [ ] Update postgres-meta from `supabase/postgres-meta:v0.91.6` to `supabase/postgres-meta:v0.96.6`.
+- [ ] Rebuild the Railway Postgres image from `6ixfalls/supabase/postgres` using `supabase/postgres:17.6.1.136` as the base image.
+- [ ] Refresh the SQL files already baked by `6ixfalls/supabase/postgres` from the official Docker setup: `_supabase.sql`, `logs.sql`, `pooler.sql`, `realtime.sql`, `roles.sql`, `jwt.sql`, and `webhooks.sql`.
+- [ ] Rebase `6ixfalls/supabase/pooler` from `supabase/supavisor:2.7.0` to `supabase/supavisor:2.9.5`.
 
-- [ ] Change Studio from `supabase/studio:2025.10.09-sha-433e578` to `supabase/studio:2026.06.03-sha-0bca601`.
-- [ ] Keep the Railway-specific Kong source repository, but update `kong/Dockerfile` from `kong:2.8.1` to `kong/kong:3.9.1`.
-- [ ] Keep the existing `envsubst` startup pattern unless Railway can mount the official entrypoint and declarative config directly.
-- [ ] Update `kong/kong.yml` with the new upstream routes/plugins instead of replacing the whole Railway template blindly.
-- [ ] Change Auth from `supabase/gotrue:v2.180.0` to `supabase/gotrue:v2.189.0`.
-- [ ] Change PostgREST from `postgrest/postgrest:v13.0.7` to `postgrest/postgrest:v14.12`.
-- [ ] Change Realtime from `supabase/realtime:v2.51.11` to `supabase/realtime:v2.102.3`.
-- [ ] Change Storage from `supabase/storage-api:v1.28.0` to `supabase/storage-api:v1.60.4`.
-- [ ] Change imgproxy from `darthsim/imgproxy:v3.8.0` to `darthsim/imgproxy:v3.30.1`.
-- [ ] Change postgres-meta from `supabase/postgres-meta:v0.91.6` to `supabase/postgres-meta:v0.96.6`.
-- [ ] Rebuild the Railway-specific Postgres image from the `6ixfalls/supabase` `postgres` folder using `supabase/postgres:17.6.1.136` as the base image.
-- [ ] For existing deployments, require a backup/restore or tested Postgres 15-to-17 upgrade plan before changing the Postgres image.
+## 2. Add only missing services
 
-## 2. Add services missing from the template
+- [ ] Add Edge Functions with `supabase/edge-runtime:v1.74.0`.
+- [ ] Add Supavisor using the existing `6ixfalls/supabase/pooler` source folder.
+- [ ] Add a Supavisor transaction TCP proxy on `6543` only if Railway users need transaction pooling.
+- [ ] Leave logs/analytics out unless the template will expose Logflare/Vector intentionally.
 
-- [ ] Add an Edge Functions service using `supabase/edge-runtime:v1.74.0`.
-- [ ] Uncomment or add the existing `/functions/v1/*` Kong route and point it to the new Edge Functions service.
-- [ ] Add a Supavisor service using the existing Railway-specific `pooler` source folder, rebased to `supabase/supavisor:2.9.5`.
-- [ ] Add the Supavisor transaction-pooler TCP endpoint on port `6543` if Railway TCP proxies are desired.
-- [ ] Update the existing `pooler.exs` rather than creating a second pooler config asset.
-- [ ] Decide whether logs/analytics should be included now or delivered later as an optional add-on.
+## 3. Supabase Studio variables
 
-## 3. Refresh the existing Railway Postgres image
+Keep existing Studio UI variables, but add only the missing Docker-aligned values below.
 
-- [ ] Keep the `6ixfalls/supabase` Postgres image pattern because it already bakes the required SQL files into `/docker-entrypoint-initdb.d`.
-- [ ] Refresh `_supabase.sql` from the official Docker setup.
-- [ ] Refresh `logs.sql` from the official Docker setup.
-- [ ] Refresh `pooler.sql` from the official Docker setup.
-- [ ] Refresh `realtime.sql` from the official Docker setup.
-- [ ] Refresh `roles.sql` from the official Docker setup.
-- [ ] Refresh `jwt.sql` from the official Docker setup.
-- [ ] Refresh `webhooks.sql` from the official Docker setup.
-- [ ] Keep the Railway-specific `wrapper.sh` behavior for `PGHOST`, `PGPORT`, `PGDATA`, logging, and `/etc/postgresql-custom` persistence.
-- [ ] Retest `wrapper.sh` against the Postgres 17 base image because the current wrapper references Postgres image internals from older upstream builds.
+- [ ] Add `ANON_KEY` from the credential generator.
+- [ ] Add `SERVICE_ROLE_KEY` from the credential generator.
+- [ ] Add `JWT_SECRET` from the credential generator.
+- [ ] Add `POSTGRES_PASSWORD` from the credential generator.
+- [ ] Add `SECRET_KEY_BASE` from the credential generator.
+- [ ] Add `REALTIME_DB_ENC_KEY` from the credential generator.
+- [ ] Add `VAULT_ENC_KEY` from the credential generator.
+- [ ] Add `S3_PROTOCOL_ACCESS_KEY_ID` from the credential generator.
+- [ ] Add `S3_PROTOCOL_ACCESS_KEY_SECRET` from the credential generator.
+- [ ] Add `MINIO_ROOT_USER` from the credential generator.
+- [ ] Add `MINIO_ROOT_PASSWORD` from the credential generator.
+- [ ] Add `DASHBOARD_PASSWORD` from the credential generator.
+- [ ] Add `SUPABASE_PUBLISHABLE_KEY` from the credential generator.
+- [ ] Add `SUPABASE_SECRET_KEY` from the credential generator.
+- [ ] Add `JWT_KEYS` from the credential generator.
+- [ ] Add `JWT_JWKS` from the credential generator.
+- [ ] Change Studio `AUTH_JWT_SECRET` to `${{"Supabase Studio".JWT_SECRET}}`.
+- [ ] Change Studio `SUPABASE_ANON_KEY` to `${{"Supabase Studio".ANON_KEY}}`.
+- [ ] Change Studio `SUPABASE_SERVICE_KEY` to `${{"Supabase Studio".SERVICE_ROLE_KEY}}`.
+- [ ] Keep `SUPABASE_PUBLIC_URL=https://${{Kong.RAILWAY_PUBLIC_DOMAIN}}`.
+- [ ] Add `POSTGRES_PORT=${{Postgres.PGPORT}}`.
+- [ ] Add `PGRST_DB_SCHEMAS=${{Postgrest.PGRST_DB_SCHEMAS}}`.
+- [ ] Add `PGRST_DB_MAX_ROWS=1000` only if Studio needs to edit this value.
+- [ ] Add `PGRST_DB_EXTRA_SEARCH_PATH=public` only if Studio needs to edit this value.
 
-## 4. Replace unsafe or incomplete credential defaults
+## 4. Postgres variables
 
-- [ ] Replace the blank Studio `AUTH_JWT_SECRET` default with a generated `JWT_SECRET` reference.
-- [ ] Replace the blank Studio `SUPABASE_ANON_KEY` default with a generated `ANON_KEY` reference.
-- [ ] Replace the blank Studio `SUPABASE_SERVICE_KEY` default with a generated `SERVICE_ROLE_KEY` reference.
-- [ ] Replace hard-coded MinIO credentials with generated `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` values.
-- [ ] Keep `PG_META_CRYPTO_KEY` generated, but ensure the generated value is at least 32 characters.
-- [ ] Ensure Realtime `DB_ENC_KEY` is exactly 16 characters.
-- [ ] Ensure `SECRET_KEY_BASE` is at least 64 characters.
-- [ ] Add `VAULT_ENC_KEY` for Supavisor and generate exactly 32 characters.
-- [ ] Add `S3_PROTOCOL_ACCESS_KEY_ID` and `S3_PROTOCOL_ACCESS_KEY_SECRET` for the Storage S3 protocol endpoint.
-- [ ] Mark `SERVICE_ROLE_KEY`, `SUPABASE_SECRET_KEY`, database passwords, SMTP passwords, S3 secrets, and pooler secrets as private/server-only in variable descriptions.
+Use the generated Studio password rather than a separate Postgres secret.
 
-## 5. Add modern auth key support without removing legacy keys
+- [ ] Change `POSTGRES_PASSWORD` to `${{"Supabase Studio".POSTGRES_PASSWORD}}`.
+- [ ] Keep `PGPASSWORD=${{POSTGRES_PASSWORD}}`.
+- [ ] Keep `PGUSER=${{POSTGRES_USER}}`.
+- [ ] Keep `PGDATABASE=${{POSTGRES_DB}}`.
+- [ ] Change `JWT_SECRET` to `${{"Supabase Studio".JWT_SECRET}}`.
+- [ ] Keep `JWT_EXP=${{Postgrest.PGRST_APP_SETTINGS_JWT_EXP}}`.
 
-- [ ] Add `SUPABASE_PUBLISHABLE_KEY` to Studio, Kong, and Edge Functions.
-- [ ] Add `SUPABASE_SECRET_KEY` to Studio, Kong, and Edge Functions.
-- [ ] Add optional `JWT_KEYS` support for Auth asymmetric signing.
-- [ ] Add optional `JWT_JWKS` support for PostgREST JWT verification.
-- [ ] Add optional `JWT_JWKS` support for Realtime JWT verification.
-- [ ] Add optional `JWT_JWKS` support for Storage JWT verification.
-- [ ] Add `ANON_KEY_ASYMMETRIC` to Kong.
-- [ ] Add `SERVICE_ROLE_KEY_ASYMMETRIC` to Kong.
-- [ ] Keep existing legacy `JWT_SECRET`, `ANON_KEY`, and `SERVICE_ROLE_KEY` compatibility for current clients.
+## 5. Kong variables and routes
 
-## 6. Update Kong configuration
+Keep Railway's `envsubst` Kong flow. Do not switch `KONG_DECLARATIVE_CONFIG` unless the source repo changes its rendered file path.
 
-- [ ] Change `KONG_DNS_ORDER` from `AAAA,LAST,A,CNAME` to `LAST,A,CNAME` unless Railway requires IPv6-first DNS resolution.
-- [ ] Add `KONG_DNS_NOT_FOUND_TTL=1`.
+- [ ] Keep `KONG_DECLARATIVE_CONFIG=/home/kong/kong.yml` for the current `6ixfalls/supabase/kong` flow.
+- [ ] Change `SUPABASE_ANON_KEY` to `${{"Supabase Studio".ANON_KEY}}`.
+- [ ] Change `SUPABASE_SERVICE_KEY` to `${{"Supabase Studio".SERVICE_ROLE_KEY}}`.
+- [ ] Add `SUPABASE_PUBLISHABLE_KEY=${{"Supabase Studio".SUPABASE_PUBLISHABLE_KEY}}`.
+- [ ] Add `SUPABASE_SECRET_KEY=${{"Supabase Studio".SUPABASE_SECRET_KEY}}`.
+- [ ] Add `ANON_KEY_ASYMMETRIC=${{"Supabase Studio".ANON_KEY_ASYMMETRIC}}`.
+- [ ] Add `SERVICE_ROLE_KEY_ASYMMETRIC=${{"Supabase Studio".SERVICE_ROLE_KEY_ASYMMETRIC}}`.
+- [ ] Change `DASHBOARD_PASSWORD` to `${{"Supabase Studio".DASHBOARD_PASSWORD}}`.
+- [ ] Keep `DASHBOARD_USERNAME` generated or user-defined; do not add a second dashboard username variable elsewhere.
 - [ ] Add `request-termination`, `ip-restriction`, and `post-function` to `KONG_PLUGINS`.
-- [ ] Add `KONG_PROXY_ACCESS_LOG=/dev/stdout combined`.
-- [ ] If keeping the existing Railway `envsubst` entrypoint, keep `KONG_DECLARATIVE_CONFIG=/home/kong/kong.yml`; only switch to `/usr/local/kong/kong.yml` if adopting the official Kong entrypoint layout.
-- [ ] Keep the existing public service domain on Kong port `8000`.
+- [ ] Change `KONG_DNS_ORDER` to `LAST,A,CNAME` unless Railway IPv6 resolution requires the current value.
+- [ ] Add `KONG_DNS_NOT_FOUND_TTL=1` only if supported by the Railway Kong image.
+- [ ] Restore the Storage route in `kong/kong.yml` if Storage should be served through Kong.
+- [ ] Add the Functions route in `kong/kong.yml` for `/functions/v1/*`.
 
-## 7. Update Studio configuration
+## 6. Auth variables
 
-- [ ] Add `HOSTNAME=0.0.0.0`.
-- [ ] Add `POSTGRES_PORT`.
-- [ ] Add `POSTGRES_USER_READ_WRITE=postgres`.
-- [ ] Add `PGRST_DB_SCHEMAS`.
-- [ ] Add `PGRST_DB_MAX_ROWS`.
-- [ ] Add `PGRST_DB_EXTRA_SEARCH_PATH`.
-- [ ] Add optional `OPENAI_API_KEY`.
-- [ ] Add `SUPABASE_PUBLISHABLE_KEY`.
-- [ ] Add `SUPABASE_SECRET_KEY`.
-- [ ] Add `ENABLED_FEATURES_LOGS_ALL=false` unless logs are included and ready.
-- [ ] Add snippets and Edge Functions management folders only if Railway can persist or mount those directories.
+Only add variables that are missing from the template and likely to be user-configured.
 
-## 8. Update Auth configuration
+- [ ] Change `GOTRUE_JWT_SECRET` to `${{"Supabase Studio".JWT_SECRET}}`.
+- [ ] Add `GOTRUE_JWT_EXP=${{Postgrest.PGRST_APP_SETTINGS_JWT_EXP}}`.
+- [ ] Add `GOTRUE_JWT_ISSUER=${{API_EXTERNAL_URL}}/auth/v1`.
+- [ ] Add `GOTRUE_URI_ALLOW_LIST` for additional redirect URLs.
+- [ ] Add `GOTRUE_DISABLE_SIGNUP` only if the template should expose signup control.
+- [ ] Add `GOTRUE_JWT_KEYS=${{"Supabase Studio".JWT_KEYS}}` only when asymmetric auth is enabled.
+- [ ] Add SMTP variables only if the template will support email delivery out of the box.
+- [ ] Add OAuth/SMS/MFA/SAML/hook variables only as optional examples, not required template variables.
 
-- [ ] Add `GOTRUE_URI_ALLOW_LIST` from a new `ADDITIONAL_REDIRECT_URLS` variable.
-- [ ] Add `GOTRUE_DISABLE_SIGNUP` from a new `DISABLE_SIGNUP` variable.
-- [ ] Add `GOTRUE_JWT_EXP` from a new `JWT_EXPIRY` variable.
-- [ ] Add `GOTRUE_JWT_ISSUER=${API_EXTERNAL_URL}/auth/v1`.
-- [ ] Add optional `GOTRUE_JWT_KEYS` support.
-- [ ] Add email signup and anonymous-user toggles.
-- [ ] Add SMTP variables.
-- [ ] Add mailer URL path variables.
-- [ ] Add phone signup and phone autoconfirm toggles.
-- [ ] Add optional OAuth provider variables.
-- [ ] Add optional SMS provider variables.
-- [ ] Add optional MFA variables.
-- [ ] Add optional SAML variables.
-- [ ] Add optional Auth hook variables.
+## 7. PostgREST variables
 
-## 9. Update PostgREST configuration
+- [ ] Change `PGRST_JWT_SECRET` to `${{"Supabase Studio".JWT_JWKS}}` when asymmetric auth is enabled; otherwise keep `${{"Supabase Studio".JWT_SECRET}}` style legacy wiring.
+- [ ] Change `PGRST_APP_SETTINGS_JWT_SECRET` to `${{"Supabase Studio".JWT_SECRET}}`.
+- [ ] Keep `PGRST_APP_SETTINGS_JWT_EXP=3600` unless the template exposes JWT expiry as a user setting.
+- [ ] Add `PGRST_DB_MAX_ROWS=1000` only if users need to edit it.
+- [ ] Add `PGRST_DB_EXTRA_SEARCH_PATH=public` only if users need to edit it.
+- [ ] Remove `PGRST_SERVER_HOST=!6` unless Railway proves it is required for PostgREST v14.
 
-- [ ] Add `PGRST_DB_MAX_ROWS`.
-- [ ] Add `PGRST_DB_EXTRA_SEARCH_PATH`.
-- [ ] Add `PGRST_ADMIN_SERVER_PORT=3001`.
-- [ ] Add `PGRST_ADMIN_SERVER_HOST=localhost`.
-- [ ] Change `PGRST_JWT_SECRET` to use `JWT_JWKS` when present and `JWT_SECRET` otherwise.
-- [ ] Change `PGRST_APP_SETTINGS_JWT_EXP` to use the shared `JWT_EXPIRY` variable.
-- [ ] Remove `PGRST_SERVER_HOST=!6` unless a Railway-specific test proves it is required.
+## 8. Realtime variables
 
-## 10. Update Realtime configuration
-
-- [ ] Change `ERL_AFLAGS` from `-proto_dist inet6_tcp` to `-proto_dist inet_tcp` unless Railway requires IPv6 Erlang distribution.
-- [ ] Rename or map `DB_ENC_KEY` to a shared `REALTIME_DB_ENC_KEY` variable.
-- [ ] Add optional `API_JWT_JWKS` support.
-- [ ] Add `METRICS_JWT_SECRET` from `JWT_SECRET`.
+- [ ] Change `DB_ENC_KEY` to `${{"Supabase Studio".REALTIME_DB_ENC_KEY}}`.
+- [ ] Change `API_JWT_SECRET` to `${{"Supabase Studio".JWT_SECRET}}`.
+- [ ] Add `API_JWT_JWKS=${{"Supabase Studio".JWT_JWKS}}` only when asymmetric auth is enabled.
+- [ ] Add `METRICS_JWT_SECRET=${{"Supabase Studio".JWT_SECRET}}`.
 - [ ] Add `RUN_JANITOR=true`.
 - [ ] Add `DISABLE_HEALTHCHECK_LOGGING=true`.
-- [ ] Keep the existing `DB_AFTER_CONNECT_QUERY=SET search_path TO _realtime` setting.
+- [ ] Change `ERL_AFLAGS` to `-proto_dist inet_tcp` unless Railway requires IPv6 Erlang distribution.
 
-## 11. Update Storage configuration
+## 9. Storage variables
 
-- [ ] Add `POSTGREST_URL` pointing to the private PostgREST URL on port `3000`.
-- [ ] Add optional `JWT_JWKS` support.
-- [ ] Uncomment or restore the Storage route in `kong/kong.yml` if Storage should be served through Kong; the current `6ixfalls` Kong config has it commented out.
-- [ ] Add `STORAGE_PUBLIC_URL` from `SUPABASE_PUBLIC_URL`.
+Keep S3/MinIO because the Railway template already uses it. Do not add file-backend variables unless switching away from S3.
+
+- [ ] Change `ANON_KEY` to `${{"Supabase Studio".ANON_KEY}}`.
+- [ ] Change `SERVICE_KEY` to `${{"Supabase Studio".SERVICE_ROLE_KEY}}`.
+- [ ] Change `AUTH_JWT_SECRET` to `${{"Supabase Studio".JWT_SECRET}}`.
+- [ ] Add `JWT_JWKS=${{"Supabase Studio".JWT_JWKS}}` only when asymmetric auth is enabled.
+- [ ] Add `POSTGREST_URL=http://${{Postgrest.RAILWAY_PRIVATE_DOMAIN}}:3000`.
+- [ ] Add `STORAGE_PUBLIC_URL=${{"Supabase Studio".SUPABASE_PUBLIC_URL}}`.
 - [ ] Add `REQUEST_ALLOW_X_FORWARDED_PATH=true`.
-- [ ] Replace `UPLOAD_FILE_SIZE_LIMIT` with `FILE_SIZE_LIMIT` unless Storage still accepts both in the target version.
-- [ ] Replace `STORAGE_S3_BUCKET` with `GLOBAL_S3_BUCKET`.
-- [ ] Add `FILE_STORAGE_BACKEND_PATH=/var/lib/storage` if using the official file backend.
-- [ ] Replace `STORAGE_S3_REGION` with `REGION`.
-- [ ] Replace `IMAGE_TRANSFORMATION_ENABLED` with `ENABLE_IMAGE_TRANSFORMATION` unless Storage still accepts both in the target version.
-- [ ] Add `S3_PROTOCOL_ACCESS_KEY_ID`.
-- [ ] Add `S3_PROTOCOL_ACCESS_KEY_SECRET`.
-- [ ] If MinIO remains the default backend, map the old S3 variables to `GLOBAL_S3_ENDPOINT`, `GLOBAL_S3_PROTOCOL`, `GLOBAL_S3_FORCE_PATH_STYLE`, `AWS_ACCESS_KEY_ID`, and `AWS_SECRET_ACCESS_KEY`.
-- [ ] If switching to the official file backend, add a persistent `/var/lib/storage` volume and set `STORAGE_BACKEND=file`.
+- [ ] Rename `UPLOAD_FILE_SIZE_LIMIT` to `FILE_SIZE_LIMIT` if required by `storage-api:v1.60.4`.
+- [ ] Rename `STORAGE_S3_BUCKET` to `GLOBAL_S3_BUCKET` if required by `storage-api:v1.60.4`.
+- [ ] Rename `STORAGE_S3_REGION` to `REGION` if required by `storage-api:v1.60.4`.
+- [ ] Rename `IMAGE_TRANSFORMATION_ENABLED` to `ENABLE_IMAGE_TRANSFORMATION` if required by `storage-api:v1.60.4`.
+- [ ] Add `S3_PROTOCOL_ACCESS_KEY_ID=${{"Supabase Studio".S3_PROTOCOL_ACCESS_KEY_ID}}`.
+- [ ] Add `S3_PROTOCOL_ACCESS_KEY_SECRET=${{"Supabase Studio".S3_PROTOCOL_ACCESS_KEY_SECRET}}`.
 
-## 12. Update imgproxy configuration
+## 10. S3 / MinIO variables
 
-- [ ] Add `IMGPROXY_LOCAL_FILESYSTEM_ROOT=/`.
-- [ ] Replace `IMGPROXY_ENABLE_WEBP_DETECTION=true` with `IMGPROXY_AUTO_WEBP=true` unless imgproxy still needs both.
-- [ ] Add `IMGPROXY_MAX_SRC_RESOLUTION=16.8`.
-- [ ] If Storage uses the file backend, mount the same storage volume into imgproxy.
+- [ ] Change `MINIO_ROOT_USER` to `${{"Supabase Studio".MINIO_ROOT_USER}}`.
+- [ ] Change `MINIO_ROOT_PASSWORD` to `${{"Supabase Studio".MINIO_ROOT_PASSWORD}}`.
+- [ ] Keep existing Railway private endpoint variables; they are service-derived and should not be duplicated in Studio.
 
-## 13. Update postgres-meta configuration
+## 11. imgproxy and postgres-meta variables
 
-- [ ] Change `PG_META_DB_USER` from `supabase_admin` to `postgres` if following the official Docker setup exactly.
-- [ ] Keep the existing `CRYPTO_KEY`, host, port, database, and password wiring.
+- [ ] For imgproxy, add only `IMGPROXY_LOCAL_FILESYSTEM_ROOT=/` and `IMGPROXY_MAX_SRC_RESOLUTION=16.8` if required by the newer image.
+- [ ] For imgproxy, rename `IMGPROXY_ENABLE_WEBP_DETECTION` to `IMGPROXY_AUTO_WEBP` if required by `darthsim/imgproxy:v3.30.1`.
+- [ ] For postgres-meta, change `CRYPTO_KEY` to `${{"Supabase Studio".PG_META_CRYPTO_KEY}}`.
+- [ ] For postgres-meta, keep existing Postgres host, port, database, user, and password references unless the official role change is required.
 
-## 14. Configure Supavisor
+## 12. Supavisor variables
 
-- [ ] Add `DATABASE_URL=ecto://supabase_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/_supabase`.
-- [ ] Add `CLUSTER_POSTGRES=true`.
-- [ ] Add `SECRET_KEY_BASE`.
-- [ ] Add `VAULT_ENC_KEY`.
-- [ ] Add `API_JWT_SECRET` from `JWT_SECRET`.
-- [ ] Add `METRICS_JWT_SECRET` from `JWT_SECRET`.
-- [ ] Add `REGION=local` unless Railway-specific regions are required.
-- [ ] Add `ERL_AFLAGS=-proto_dist inet_tcp` unless Railway requires IPv6 Erlang distribution.
-- [ ] Add `POOLER_TENANT_ID`.
-- [ ] Add `POOLER_DEFAULT_POOL_SIZE=20`.
-- [ ] Add `POOLER_MAX_CLIENT_CONN=100`.
-- [ ] Add `POOLER_POOL_MODE=transaction`.
-- [ ] Add `DB_POOL_SIZE=5`.
-- [ ] Keep the existing Railway pooler startup command, but retest it after rebasing from `supabase/supavisor:2.7.0` to `supabase/supavisor:2.9.5`.
+Add Supavisor as a new service; source secrets from Studio.
 
-## 15. Configure Edge Functions
+- [ ] Add `DATABASE_URL=ecto://supabase_admin:${{Postgres.PGPASSWORD}}@${{Postgres.PGHOST}}:${{Postgres.PGPORT}}/_supabase`.
+- [ ] Add `SECRET_KEY_BASE=${{"Supabase Studio".SECRET_KEY_BASE}}`.
+- [ ] Add `VAULT_ENC_KEY=${{"Supabase Studio".VAULT_ENC_KEY}}`.
+- [ ] Add `API_JWT_SECRET=${{"Supabase Studio".JWT_SECRET}}`.
+- [ ] Add `METRICS_JWT_SECRET=${{"Supabase Studio".JWT_SECRET}}`.
+- [ ] Add `POOLER_TENANT_ID` as a generated or user-provided non-secret value.
+- [ ] Add pool sizes only if the template should make them user configurable; otherwise keep them in `pooler.exs`.
 
-- [ ] Add `SUPABASE_PUBLIC_URL`.
-- [ ] Add `SUPABASE_SERVICE_ROLE_KEY` from `SERVICE_ROLE_KEY`.
-- [ ] Add `SUPABASE_PUBLISHABLE_KEYS` using `SUPABASE_PUBLISHABLE_KEY`.
-- [ ] Add `SUPABASE_SECRET_KEYS` using `SUPABASE_SECRET_KEY`.
-- [ ] Add `SUPABASE_DB_URL=postgresql://postgres:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}`.
-- [ ] Add `VERIFY_JWT` from `FUNCTIONS_VERIFY_JWT`.
-- [ ] Provide `/home/deno/functions/main`.
-- [ ] Start Edge Runtime with `start --main-service /home/deno/functions/main`.
+## 13. Edge Functions variables
 
-## 16. Add missing health checks
+Add Edge Functions as a new service; source secrets from Studio.
 
-- [ ] Add a Studio health check that verifies `/api/platform/profile` returns `200`.
-- [ ] Add a Kong health check using `kong health` or an equivalent route.
-- [ ] Add an Auth health check against `/health` on port `9999`.
-- [ ] Add a PostgREST readiness check using `postgrest --ready` or the admin server.
-- [ ] Add a Realtime tenant health check that sends an anon bearer token.
-- [ ] Add an imgproxy health check using `imgproxy health`.
-- [ ] Add a Postgres health check using `pg_isready`.
-- [ ] Add a Supavisor health check against `/api/health`.
-- [ ] Add an Edge Functions TCP health check on port `9000`.
-- [ ] Keep the existing Storage `/status` health check.
-- [ ] Keep the existing MinIO `/minio/health/ready` health check if MinIO remains in the template.
+- [ ] Add `JWT_SECRET=${{"Supabase Studio".JWT_SECRET}}`.
+- [ ] Add `SUPABASE_URL=http://${{Kong.RAILWAY_PRIVATE_DOMAIN}}:8000`.
+- [ ] Add `SUPABASE_PUBLIC_URL=${{"Supabase Studio".SUPABASE_PUBLIC_URL}}`.
+- [ ] Add `SUPABASE_ANON_KEY=${{"Supabase Studio".ANON_KEY}}`.
+- [ ] Add `SUPABASE_SERVICE_ROLE_KEY=${{"Supabase Studio".SERVICE_ROLE_KEY}}`.
+- [ ] Add `SUPABASE_PUBLISHABLE_KEYS={"default":"${{"Supabase Studio".SUPABASE_PUBLISHABLE_KEY}}"}`.
+- [ ] Add `SUPABASE_SECRET_KEYS={"default":"${{"Supabase Studio".SUPABASE_SECRET_KEY}}"}`.
+- [ ] Add `SUPABASE_DB_URL=postgresql://postgres:${{Postgres.PGPASSWORD}}@${{Postgres.PGHOST}}:${{Postgres.PGPORT}}/${{Postgres.PGDATABASE}}`.
+- [ ] Add `VERIFY_JWT=false` unless the template should expose this as a user setting.
 
-## 17. Validate only changed behavior
+## 14. Health checks and validation
 
-- [ ] Deploy a fresh project from the updated template.
-- [ ] Confirm the newly added Edge Functions service becomes healthy.
-- [ ] Confirm the newly added Supavisor service becomes healthy.
-- [ ] Confirm the updated Kong image routes existing `/auth/v1/*`, `/rest/v1/*`, `/realtime/v1/*`, and `/storage/v1/*` paths.
-- [ ] Confirm Kong routes the new `/functions/v1/*` path.
-- [ ] Confirm generated `ANON_KEY` can query PostgREST.
-- [ ] Confirm generated `SERVICE_ROLE_KEY` works server-side and is not exposed in browser-visible variables.
-- [ ] Confirm Realtime works after the version and environment updates.
-- [ ] Confirm Storage works after the variable rename/mapping updates.
-- [ ] Confirm Supavisor accepts session-mode and transaction-mode Postgres connections if both are exposed.
-- [ ] Document any Railway-specific deviations from the official Docker setup.
+- [ ] Add missing health checks for Studio, Kong, Auth, PostgREST, Realtime, imgproxy, Postgres, Supavisor, and Edge Functions.
+- [ ] Keep existing Storage and MinIO health checks.
+- [ ] Validate a fresh deployment by checking Studio, Auth, REST, Realtime, Storage, Edge Functions, and Supavisor transaction pooling.
+- [ ] Validate that browser-visible clients only receive anon/publishable keys and never receive service-role or secret keys.
